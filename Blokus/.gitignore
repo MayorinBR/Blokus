@@ -1,0 +1,15 @@
+# Unity一時ファイル類（必ず除外）
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+
+# OSやIDEごとのキャッシュ
+.vs/
+.vscode/
+.DS_Store
+Thumbs.db
