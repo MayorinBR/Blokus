@@ -105,6 +105,16 @@ public class PieceDragger : MonoBehaviour
                 PieceManager.PieceType type = (PieceManager.PieceType)System.Enum.Parse(
                     typeof(PieceManager.PieceType), pieceName);
 
+                // NOVA VALIDAÇÃO: Bloqueia arraste de peças do Player 2 no modo 1 jogador
+                bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
+
+                // Se não é PvP (modo 1 jogador) e é uma peça do Player 2, não permite arrastar
+                if (!isPvP && rootPiece.name.Contains("_Player1"))
+                {
+                    Debug.Log("Não é possível arrastar peças da IA no modo 1 jogador!");
+                    return;
+                }
+
                 if ((GameManager.Instance.currentPlayer == 0 && PiecePalette.Instance.player1Pieces.ContainsKey(type)) ||
                     (GameManager.Instance.currentPlayer == 1 && PiecePalette.Instance.player2Pieces.ContainsKey(type)))
                 {
@@ -181,43 +191,7 @@ public class PieceDragger : MonoBehaviour
         mousePoint.z = zCoord;
         return Camera.main.ScreenToWorldPoint(mousePoint);
     }
-    /*
-    private IEnumerator ReturnPieceToOriginalPosition()
-    {
-        // Salva a rotação atual para animação
-        Quaternion currentRotation = selectedPiece.transform.rotation;
-        Quaternion targetRotation = Quaternion.Euler(0, 90, 0); // Rotação original (padrão das peças na paleta)
 
-        float duration = 0.5f;
-        float elapsed = 0f;
-        Vector3 startPosition = selectedPiece.transform.position;
-
-        while (elapsed < duration)
-        {
-            // Interpola tanto a posição quanto a rotação
-            selectedPiece.transform.position = Vector3.Lerp(
-                startPosition,
-                originalPosition,
-                elapsed / duration
-            );
-
-            selectedPiece.transform.rotation = Quaternion.Lerp(
-                currentRotation,
-                targetRotation,
-                elapsed / duration
-            );
-
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        // Garante os valores exatos no final
-        selectedPiece.transform.position = originalPosition;
-        selectedPiece.transform.rotation = targetRotation;
-        selectedPiece.transform.localScale = Vector3.one * PiecePalette.Instance.pieceScale;
-
-        CleanUp();
-    }*/
     private void ReturnPieceToOriginalPosition()
     {
         if (selectedPiece != null)

@@ -11,10 +11,13 @@ public class TurnUI : MonoBehaviour
 
     [Header("Format Settings")]
     public int normalFontSize = 24;
-    public int activeFontSize = 28;
+    public int activeFontSize = 32;
     public FontWeight normalFontWeight = FontWeight.Regular;
     public FontWeight activeFontWeight = FontWeight.Bold;
-    public Color activeColor = Color.yellow; // Cor destacada para o jogador atual
+
+    [Header("Color Settings")]
+    [Range(0f, 1f)]
+    public float inactiveColorAlpha = 0.5f; // Transparência para jogadores inativos
 
     void Awake()
     {
@@ -30,22 +33,63 @@ public class TurnUI : MonoBehaviour
 
     public void UpdateTurnUI(int currentPlayer)
     {
+        // Verifica se está no modo PvP ou PvAI
+        bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
+
         for (int i = 0; i < playerTurnTexts.Length; i++)
         {
             if (playerTurnTexts[i] != null)
             {
                 bool isActivePlayer = (i == currentPlayer);
 
-                // Atualiza o texto do turno
-                playerTurnTexts[i].text = $"Player {i + 1}: ";
-                playerTurnTexts[i].fontSize = isActivePlayer ? activeFontSize : normalFontSize;
-                playerTurnTexts[i].fontWeight = isActivePlayer ? activeFontWeight : normalFontWeight;
-                playerTurnTexts[i].color = isActivePlayer ? activeColor : GameManager.Instance.playerColors[i];
+                // Obtém a cor base do jogador do GameManager
+                Color playerColor = GameManager.Instance.playerColors[i];
+
+                if (isActivePlayer)
+                {
+                    // JOGADOR ATIVO
+                    // Usa a cor do jogador com opacidade total
+                    playerTurnTexts[i].color = playerColor;
+                    playerTurnTexts[i].fontSize = activeFontSize;
+                    playerTurnTexts[i].fontWeight = activeFontWeight;
+
+                    // Define o texto baseado no modo de jogo
+                    if (!isPvP && i == 1)
+                    {
+                        playerTurnTexts[i].text = "AI Turn";
+                    }
+                    else
+                    {
+                        playerTurnTexts[i].text = $"Player {i + 1} Turn";
+                    }
+                }
+                else
+                {
+                    // JOGADOR INATIVO
+                    // Usa a cor do jogador com transparência reduzida
+                    Color inactiveColor = playerColor;
+                    inactiveColor.a = inactiveColorAlpha;
+                    playerTurnTexts[i].color = inactiveColor;
+                    playerTurnTexts[i].fontSize = normalFontSize;
+                    playerTurnTexts[i].fontWeight = normalFontWeight;
+
+                    // Define o texto baseado no modo de jogo
+                    if (!isPvP && i == 1)
+                    {
+                        playerTurnTexts[i].text = "AI";
+                    }
+                    else
+                    {
+                        playerTurnTexts[i].text = $"Player {i + 1}";
+                    }
+                }
             }
         }
 
         // Garante que as peças restantes são atualizadas
-        ScoreUI.Instance.UpdatePiecesRemaining();
+        if (ScoreUI.Instance != null)
+        {
+            ScoreUI.Instance.UpdatePiecesRemaining();
+        }
     }
-
 }

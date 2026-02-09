@@ -46,7 +46,7 @@ public class AIController : MonoBehaviour
 
     public void MakeAIMove(int aiPlayerIndex)
     {
-        if (!isActive || GetAvailablePieces(aiPlayerIndex).Count == 0)
+        if (GameSettings.Instance.isPvP || !isActive)
         {
             GameManager.Instance.SwitchPlayer();
             return;

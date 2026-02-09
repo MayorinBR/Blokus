@@ -86,15 +86,20 @@ public class PiecePalette : MonoBehaviour
 
     public void RemovePiece(PieceType type, int playerIndex)
     {
+        bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
+
         if (playerIndex == 0 && player1Pieces.ContainsKey(type))
         {
-            // Apenas remove do dicionário, mas não destrói ou desativa a peça
             player1Pieces.Remove(type);
         }
         else if (playerIndex == 1 && player2Pieces.ContainsKey(type))
         {
-            // Para a AI, pode destruir a peça da paleta
-            Destroy(player2Pieces[type]);
+            // Se NÃO for PvP (ou seja, for contra a AI), mantém a lógica de destruir
+            if (!isPvP)
+            {
+                Destroy(player2Pieces[type]);
+            }
+
             player2Pieces.Remove(type);
         }
     }

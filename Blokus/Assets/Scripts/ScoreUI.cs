@@ -20,7 +20,6 @@ public class ScoreUI : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
-            // Garante que o painel está desativado imediatamente
             if (gameOverPanel != null)
             {
                 gameOverPanel.SetActive(false);
