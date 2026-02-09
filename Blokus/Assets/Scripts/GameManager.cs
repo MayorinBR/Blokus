@@ -18,7 +18,6 @@ public class GameManager : MonoBehaviour
     new Color(1.0f, 1.0f, 0.0f)       // Amarelo mais escuro (Jogador 4)
 };
 
-    // Substitua o array startCorners por:
     public Vector2Int[] startPositions = new Vector2Int[4]
     {
     new Vector2Int(4, 4),   // Jogador 0 - Centro Superior Esquerdo
@@ -55,13 +54,11 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
-        // Initialize scores first
         if (ScoreManager.Instance != null)
         {
             ScoreManager.Instance.InitializeScores();
         }
 
-        // Then update UI
         if (TurnUI.Instance != null)
         {
             TurnUI.Instance.UpdateTurnUI(currentPlayer);
@@ -76,6 +73,8 @@ public class GameManager : MonoBehaviour
         {
             PiecePalette.Instance.DisplayAllPieces();
         }
+
+        Debug.Log($"[GameManager] Jogo iniciado - Jogador atual: {currentPlayer}");
     }
 
     public bool CanUsePiece(PieceManager.PieceType type, int playerIndex)
@@ -91,6 +90,7 @@ public class GameManager : MonoBehaviour
             Debug.Log($"Peça {type} marcada como usada pelo jogador {playerIndex}");
         }
     }
+
     public void ResetGame()
     {
         for (int i = 0; i < usedPieces.Length; i++)
@@ -98,7 +98,6 @@ public class GameManager : MonoBehaviour
             usedPieces[i].Clear();
         }
 
-        // Limpa o tabuleiro
         for (int x = 0; x < BoardManager.BoardSize; x++)
         {
             for (int y = 0; y < BoardManager.BoardSize; y++)
@@ -107,16 +106,13 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Reseta os jogadores
         currentPlayer = 0;
 
-        // Atualiza a UI
         if (TurnManager.Instance != null)
         {
             TurnManager.Instance.UpdateTurnUI();
         }
 
-        // Reseta o score (se necessário)
         if (ScoreManager.Instance != null)
         {
             ScoreManager.Instance.InitializeScores();
@@ -124,16 +120,20 @@ public class GameManager : MonoBehaviour
 
         ScoreUI.Instance.gameOverPanel.SetActive(false);
         ScoreUI.Instance.postGameOverPanel.SetActive(false);
-
-        // Reiniciar a paleta de peças
         PiecePalette.Instance.DisplayAllPieces();
-
-        // Atualizar UI
         ScoreUI.Instance.UpdatePiecesRemaining();
     }
 
     public bool IsValidMove(GameObject piece)
     {
+        // VALIDAÇÃO CRÍTICA: Verifica se a peça pertence ao jogador atual
+        int pieceOwner = GetPiecePlayer(piece);
+        if (pieceOwner != currentPlayer)
+        {
+            Debug.LogWarning($"Peça do jogador {pieceOwner} não pode ser movida no turno do jogador {currentPlayer}");
+            return false;
+        }
+
         List<Vector3> blockWorldPositions = BoardManager.Instance.GetPieceBlocksWorldPositions(piece);
         bool hasAdjacentCorner = false;
         bool hasAdjacentSide = false;
@@ -142,7 +142,6 @@ public class GameManager : MonoBehaviour
         {
             Vector2Int boardPos = WorldToBoardPosition(blockPos);
 
-            // Verificações básicas (dentro do tabuleiro e espaço não ocupado)
             if (boardPos.x < 0 || boardPos.x >= BoardManager.BoardSize ||
                 boardPos.y < 0 || boardPos.y >= BoardManager.BoardSize)
             {
@@ -155,13 +154,11 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Verificação especial para o primeiro movimento
         if (IsFirstMove(currentPlayer))
         {
             Vector2Int firstBlockPos = WorldToBoardPosition(blockWorldPositions[0]);
             if (!IsInStartingCorner(firstBlockPos, currentPlayer))
             {
-                // Para o primeiro movimento, pelo menos um bloco deve estar na posição inicial
                 bool anyBlockInStartPos = false;
                 foreach (Vector3 blockPos in blockWorldPositions)
                 {
@@ -182,7 +179,6 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            // Para movimentos subsequentes, verifica as regras de adjacência
             foreach (Vector3 blockPos in blockWorldPositions)
             {
                 Vector2Int boardPos = WorldToBoardPosition(blockPos);
@@ -200,18 +196,14 @@ public class GameManager : MonoBehaviour
 
     public bool HasValidMoves(int player)
     {
-        // Salva o jogador atual para restaurar depois
         int originalPlayer = currentPlayer;
         currentPlayer = player;
 
-        // Verifica todas as peças do jogador
         foreach (PieceManager.PieceType type in PiecePalette.Instance.GetAvailablePiecesForPlayer(player))
         {
-            // Cria uma peça temporária para teste
             GameObject testPiece = PieceManager.Instance.CreatePiece(type, player);
-            testPiece.SetActive(false); // Esconde a peça de teste
+            testPiece.SetActive(false);
 
-            // Testa todas as posições possíveis no tabuleiro
             for (int x = 0; x < BoardManager.BoardSize; x++)
             {
                 for (int y = 0; y < BoardManager.BoardSize; y++)
@@ -219,7 +211,6 @@ public class GameManager : MonoBehaviour
                     Vector3 testPosition = BoardManager.Instance.BoardToWorldPosition(x, y);
                     testPiece.transform.position = testPosition;
 
-                    // Testa todas as rotações possíveis (0, 90, 180, 270 graus)
                     for (int rotation = 0; rotation < 360; rotation += 90)
                     {
                         testPiece.transform.rotation = Quaternion.Euler(0, rotation, 0);
@@ -243,81 +234,80 @@ public class GameManager : MonoBehaviour
 
     public bool IsFirstMove(int player)
     {
-        // Verifica se é o primeiro movimento do jogador
-        for (int x = 0; x < BoardManager.BoardSize; x++)
-        {
-            for (int y = 0; y < BoardManager.BoardSize; y++)
-            {
-                if (occupiedSpaces[x, y] == player) // Verifica se há peça do jogador
-                {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return usedPieces[player].Count == 0;
     }
 
     public void SwitchPlayer()
     {
-        int originalPlayer = currentPlayer;
-        int nextPlayer = (currentPlayer + 1) % 2;
-        int playersChecked = 0;
+        int previousPlayer = currentPlayer;
+        BoardManager.Instance.ClearHighlights();
 
-        while (playersChecked < 2)
+        bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
+
+        if (isPvP)
         {
-            // Verifica se o próximo jogador tem movimentos válidos
-            bool hasValidMoves = HasValidMoves(nextPlayer);
-
-            // Verifica se é a AI e se ela tem peças disponíveis
-            bool isAI = (nextPlayer == 1 && AIController.Instance != null && AIController.Instance.isActive);
-            bool AIHasPieces = isAI ? (AIController.Instance.GetAvailablePieces(1).Count > 0) : true;
-
-            if (hasValidMoves && AIHasPieces)
+            do
             {
-                currentPlayer = nextPlayer;
-                Debug.Log($"Turno do Jogador {currentPlayer + 1}");
+                currentPlayer = (currentPlayer + 1) % 2;
+            } while (!HasValidMoves(currentPlayer) && !IsGameOver());
+        }
+        else
+        {
+            currentPlayer = (currentPlayer + 1) % 2;
 
-                if (TurnUI.Instance != null)
-                {
-                    TurnUI.Instance.UpdateTurnUI(currentPlayer);
-                }
-
-                // Se for o turno da AI
-                if (isAI)
-                {
-                    StartCoroutine(AITurnDelay());
-                }
-
-                return;
-            }
-            else if (isAI && !hasValidMoves)
+            if (!HasValidMoves(currentPlayer))
             {
-                Debug.Log($"AI (Jogador {nextPlayer + 1}) não tem movimentos válidos. Pulando turno.");
+                Debug.Log($"Jogador {currentPlayer} não tem movimentos válidos");
+                currentPlayer = (currentPlayer + 1) % 2;
+
+                if (!HasValidMoves(currentPlayer))
+                {
+                    EndGame();
+                    return;
+                }
             }
 
-            nextPlayer = (nextPlayer + 1) % 2;
-            playersChecked++;
+            if (currentPlayer == 1 && !isPvP)
+            {
+                StartCoroutine(AITurnDelay());
+            }
         }
 
-        // Se chegou aqui, nenhum jogador tem movimentos válidos
-        GameOver();
+        Debug.Log($"[SwitchPlayer] Mudou de jogador {previousPlayer} para jogador {currentPlayer}");
+
+        if (TurnManager.Instance != null)
+        {
+            TurnManager.Instance.UpdateTurnUI();
+            Debug.Log($"[SwitchPlayer] TurnManager.UpdateTurnUI() chamado");
+        }
+        else
+        {
+            Debug.LogWarning("[SwitchPlayer] TurnManager.Instance é null!");
+        }
+
+        if (TurnUI.Instance != null)
+        {
+            TurnUI.Instance.UpdateTurnUI(currentPlayer);
+            Debug.Log($"[SwitchPlayer] TurnUI.UpdateTurnUI({currentPlayer}) chamado diretamente");
+        }
+        else
+        {
+            Debug.LogWarning("[SwitchPlayer] TurnUI.Instance é null!");
+        }
     }
 
-    private void GameOver()
+    public bool IsGameOver()
     {
-        Debug.Log("Game Over! Nenhum jogador pode colocar mais peças.");
+        return !HasValidMoves(0) && !HasValidMoves(1);
+    }
 
-        if (AIController.Instance != null && AIController.Instance.GetAvailablePieces(1).Count == 0)
-        {
-            Debug.Log("AI ficou sem peças disponíveis!");
-        }
+    public void EndGame()
+    {
+        Debug.Log("Jogo encerrado!");
 
-        int[] scores = {
-        ScoreManager.Instance.GetPlayerScore(0),
-        ScoreManager.Instance.GetPlayerScore(1)
-    };
-
-        ScoreUI.Instance.UpdateScores(scores);
+        int[] scores = new int[2];
+        scores[0] = ScoreManager.Instance.GetPlayerScore(0);
+        scores[1] = ScoreManager.Instance.GetPlayerScore(1);
 
         if (scores[0] > scores[1])
         {
@@ -332,10 +322,7 @@ public class GameManager : MonoBehaviour
             Debug.Log("Empate!");
         }
 
-        // Mostrar painel de game over
         ScoreUI.Instance.gameOverPanel.SetActive(true);
-
-        // Agendar para mostrar a tela de pós-game over após 3 segundos
         Invoke("ShowPostGameOverScreen", 3f);
     }
 
@@ -353,7 +340,6 @@ public class GameManager : MonoBehaviour
 
     public void CheckAdjacentSpaces(Vector2Int boardPos, ref bool hasAdjacentCorner, ref bool hasAdjacentSide)
     {
-        // Verifica os 8 espaços ao redor
         for (int x = -1; x <= 1; x++)
         {
             for (int y = -1; y <= 1; y++)
@@ -366,13 +352,14 @@ public class GameManager : MonoBehaviour
                 if (checkX >= 0 && checkX < BoardManager.BoardSize &&
                     checkY >= 0 && checkY < BoardManager.BoardSize)
                 {
+                    // REGRA DO BLOKUS: Só considera adjacência de peças DA MESMA COR
                     if (occupiedSpaces[checkX, checkY] == currentPlayer)
                     {
-                        if (Mathf.Abs(x) + Mathf.Abs(y) == 1) // Lado adjacente
+                        if (Mathf.Abs(x) + Mathf.Abs(y) == 1)
                         {
                             hasAdjacentSide = true;
                         }
-                        else if (Mathf.Abs(x) == 1 && Mathf.Abs(y) == 1) // Canto adjacente
+                        else if (Mathf.Abs(x) == 1 && Mathf.Abs(y) == 1)
                         {
                             hasAdjacentCorner = true;
                         }
@@ -397,13 +384,19 @@ public class GameManager : MonoBehaviour
     {
         PieceManager.PieceType type = GetPieceType(piece);
 
+        int pieceOwner = GetPiecePlayer(piece);
+        if (pieceOwner != currentPlayer)
+        {
+            Debug.LogWarning($"Não pode colocar peça do jogador {pieceOwner} no turno do jogador {currentPlayer}");
+            return false;
+        }
+
         if (!CanUsePiece(type, currentPlayer))
         {
             Debug.LogWarning("Esta peça já foi usada!");
             return false;
         }
 
-        // Verifica se o jogador atual ainda tem movimentos válidos
         if (!HasValidMoves(currentPlayer))
         {
             Debug.Log("Jogador não tem movimentos válidos - pulando turno");
@@ -411,7 +404,6 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        // 1. Verify the move is valid
         if (!IsValidMove(piece))
         {
             if (PiecePalette.Instance != null)
@@ -421,31 +413,24 @@ public class GameManager : MonoBehaviour
             return false;
         }
 
-        // 2. Get all block positions
         List<Vector3> blockWorldPositions = BoardManager.Instance.GetPieceBlocksWorldPositions(piece);
 
-        // 3. Mark all occupied spaces
         foreach (Vector3 blockPos in blockWorldPositions)
         {
             Vector2Int boardPos = WorldToBoardPosition(blockPos);
             occupiedSpaces[boardPos.x, boardPos.y] = currentPlayer;
         }
 
-        // 4. Find the best block for snapping
         Vector3 referencePosition = FindBestSnapReference(blockWorldPositions);
         Vector2Int snapPos = WorldToBoardPosition(referencePosition);
-
-        // 5. Calculate perfect snap position
         Vector3 snappedPosition = BoardManager.Instance.BoardToWorldPosition(snapPos.x, snapPos.y);
         Vector3 offset = referencePosition - piece.transform.position;
         piece.transform.position = snappedPosition - offset;
 
-        // 6. Configura a peça colocada corretamente
         ConfigurePlacedPiece(piece);
         MarkPieceAsUsed(type, currentPlayer);
         PiecePalette.Instance.RemovePiece(type, currentPlayer);
 
-        // 7. Remove a peça da paleta (mas não destrói a peça colocada)
         if (PiecePalette.Instance != null)
         {
             PiecePalette.Instance.RemovePiece(GetPieceType(piece), currentPlayer);
@@ -453,14 +438,8 @@ public class GameManager : MonoBehaviour
 
         ScoreManager.Instance.PiecePlaced(currentPlayer, GetPieceType(piece));
 
-        // Switch player after successful placement
+        Debug.Log($"[PlacePiece] Peça colocada pelo jogador {currentPlayer}. Chamando SwitchPlayer()...");
         SwitchPlayer();
-
-        // Safely update turn UI if TurnManager exists
-        if (TurnManager.Instance != null)
-        {
-            TurnManager.Instance.UpdateTurnUI();
-        }
 
         ScoreUI.Instance.UpdatePiecesRemaining();
 
@@ -469,7 +448,6 @@ public class GameManager : MonoBehaviour
 
     private void ConfigurePlacedPiece(GameObject piece)
     {
-        // Remove os componentes de interação
         PieceDragger dragger = piece.GetComponent<PieceDragger>();
         if (dragger != null)
         {
@@ -483,15 +461,10 @@ public class GameManager : MonoBehaviour
             Destroy(flipper);
         }
 
-        // Configurações visuais importantes:
-        // 1. Garante que a peça está ativa
         piece.SetActive(true);
-
-        // 2. Ajusta a posição Y para ficar acima do tabuleiro
         Vector3 pos = piece.transform.position;
         piece.transform.position = new Vector3(pos.x, 0.1f, pos.z);
 
-        // 3. Configura a layer correta
         int placedPieceLayer = LayerMask.NameToLayer("PlacedPieces");
         if (placedPieceLayer != -1)
         {
@@ -505,14 +478,51 @@ public class GameManager : MonoBehaviour
 
     private PieceManager.PieceType GetPieceType(GameObject piece)
     {
-        // Extrai o nome do tipo da peça do nome do GameObject
         string pieceName = piece.name.Split('_')[0];
         return (PieceManager.PieceType)System.Enum.Parse(typeof(PieceManager.PieceType), pieceName);
     }
 
+    // FUNÇÃO CRÍTICA: Extrai o índice do jogador do nome da peça
+    private int GetPiecePlayer(GameObject piece)
+    {
+        // Nome da peça é "I5_Player0" ou "T4_Player1"
+        string[] parts = piece.name.Split('_');
+        if (parts.Length >= 2 && parts[1].StartsWith("Player"))
+        {
+            string playerStr = parts[1].Replace("Player", "");
+            if (int.TryParse(playerStr, out int playerIndex))
+            {
+                return playerIndex;
+            }
+        }
+
+        // Fallback: determina pela cor
+        Renderer renderer = piece.GetComponentInChildren<Renderer>();
+        if (renderer != null)
+        {
+            Color pieceColor = renderer.material.color;
+            for (int i = 0; i < playerColors.Length; i++)
+            {
+                if (ColorsAreSimilar(pieceColor, playerColors[i]))
+                {
+                    return i;
+                }
+            }
+        }
+
+        Debug.LogError($"Impossível determinar jogador da peça: {piece.name}");
+        return -1;
+    }
+
+    private bool ColorsAreSimilar(Color a, Color b, float threshold = 0.1f)
+    {
+        return Mathf.Abs(a.r - b.r) < threshold &&
+               Mathf.Abs(a.g - b.g) < threshold &&
+               Mathf.Abs(a.b - b.b) < threshold;
+    }
+
     private Vector3 FindBestSnapReference(List<Vector3> blockPositions)
     {
-        // Find the block closest to a tile center for perfect alignment
         Vector3 bestPosition = blockPositions[0];
         float minDistance = float.MaxValue;
 
@@ -531,30 +541,17 @@ public class GameManager : MonoBehaviour
         return bestPosition;
     }
 
-    private Vector3 GetFirstBlockLocalPosition(GameObject piece)
-    {
-        foreach (Transform child in piece.transform)
-        {
-            if (!child.name.Contains("Collider"))
-            {
-                return child.localPosition;
-            }
-        }
-        return Vector3.zero;
-    }
-
     private IEnumerator AITurnDelay()
     {
-        // Pequeno delay antes da AI jogar
         yield return new WaitForSeconds(1f);
         AIController.Instance.MakeAIMove(currentPlayer);
     }
 
     public Color[] playerHighlightColors = new Color[4]
-{
-    new Color(1f, 0f, 0f, 0.7f), // Light red (para posição inicial)
-    new Color(0f, 0f, 1f, 0.7f), // Light blue (para posição inicial)
-    new Color(0f, 1f, 0f, 0.7f), // Light green (para posição inicial)
-    new Color(1f, 1f, 0f, 0.7f)    // Light yellow (para posição inicial)
-};
+    {
+        new Color(1f, 0f, 0f, 0.7f),
+        new Color(0f, 0f, 1f, 0.7f),
+        new Color(0f, 1f, 0f, 0.7f),
+        new Color(1f, 1f, 0f, 0.7f)
+    };
 }

@@ -13,7 +13,7 @@ public class GameOverUI : MonoBehaviour
     {
         // Configurar os listeners dos botões
         restartButton.onClick.AddListener(RestartGame);
-        difficultySelectButton.onClick.AddListener(GoToDifficultySelection);
+        difficultySelectButton.onClick.AddListener(GoToSelection);
     }
 
     private void RestartGame()
@@ -24,10 +24,10 @@ public class GameOverUI : MonoBehaviour
         this.gameObject.SetActive(false);
     }
 
-    private void GoToDifficultySelection()
+    private void GoToSelection()
     {
         Destroy(GameManager.Instance.gameObject); // Limpa instâncias persistentes
         Destroy(GameSettings.Instance.gameObject); // Limpa configurações
-        SceneManager.LoadScene("DifficultySelectionScene");
+        SceneManager.LoadScene("SelectionScene");
     }
 }
