@@ -1,93 +1,99 @@
 ﻿using UnityEngine;
 using TMPro;
 
+/// <summary>
+/// Manages the live in-game HUD: real-time score counters and pieces-remaining
+/// counters for both players. Updated every time a piece is placed.
+/// All display strings are resolved through <see cref="LocalizationManager"/>.
+/// End-of-game results are handled by <see cref="GameOverUI"/>.
+/// </summary>
+[DefaultExecutionOrder(-50)]
 public class ScoreUI : MonoBehaviour
 {
-    public static ScoreUI Instance;
+    public static ScoreUI Instance { get; private set; }
 
-    [Header("TextMeshPro References")]
-    public TextMeshProUGUI[] playerScoreTexts;
+    [Header("Live Scores")]
+    [Tooltip("One element per player. Displays the running score throughout the game.")]
+    public TextMeshProUGUI[] liveScoreTexts;
+
+    [Header("Pieces Remaining")]
+    [Tooltip("One element per player. Displays the number of unplayed pieces.")]
     public TextMeshProUGUI[] piecesRemainingTexts;
-    public GameObject gameOverPanel;
-    public GameObject postGameOverPanel;
-    public TextMeshProUGUI winnerText;
 
-    [Header("Settings")]
-    public Color[] playerColors;
+    private int[] lastScores = new int[2];
 
-    void Awake()
+    private void Awake()
     {
         if (Instance == null)
-        {
             Instance = this;
-            if (gameOverPanel != null)
-            {
-                gameOverPanel.SetActive(false);
-            }
-        }
         else
-        {
             Destroy(gameObject);
-        }
     }
 
-    void Start()
+    private void Start()
     {
-        // Verificação redundante para garantir que ficou desativado
-        if (gameOverPanel != null && gameOverPanel.activeSelf)
-        {
-            gameOverPanel.SetActive(false);
-        }
+        if (LocalizationManager.Instance != null)
+            LocalizationManager.Instance.OnLanguageChanged += OnLanguageChanged;
 
         UpdatePiecesRemaining();
-    }
 
-    public void UpdateScores(int[] scores)
-    {
-        // Esta função agora só será chamada no final do jogo
-        if (gameOverPanel != null)
+        if (ScoreManager.Instance != null)
         {
-            // Determina o vencedor
-            string winnerMessage;
-            if (scores[0] > scores[1])
+            UpdateScores(new int[]
             {
-                winnerMessage = "Player 1 Wins!";
-            }
-            else if (scores[1] > scores[0])
-            {
-                winnerMessage = "Player 2 Wins!";
-            }
-            else
-            {
-                winnerMessage = "It's a Tie!";
-            }
-
-            winnerText.text = winnerMessage;
-
-            // Atualiza os scores finais
-            for (int i = 0; i < scores.Length && i < playerScoreTexts.Length; i++)
-            {
-                if (playerScoreTexts[i] != null)
-                {
-                    playerScoreTexts[i].text = $"Player {i + 1} Score: {scores[i]}";
-                    playerScoreTexts[i].color = GameManager.Instance.playerColors[i];
-                }
-            }
+                ScoreManager.Instance.GetPlayerScore(0),
+                ScoreManager.Instance.GetPlayerScore(1)
+            });
         }
     }
 
+    private void OnDestroy()
+    {
+        if (LocalizationManager.Instance != null)
+            LocalizationManager.Instance.OnLanguageChanged -= OnLanguageChanged;
+    }
+
+    /// <summary>
+    /// Refreshes the live score display.
+    /// Called by <see cref="ScoreManager"/> after every piece placement.
+    /// </summary>
+    /// <param name="scores">Current score array indexed by player (0-based).</param>
+    public void UpdateScores(int[] scores)
+    {
+        lastScores = scores;
+
+        if (liveScoreTexts == null) return;
+
+        for (int i = 0; i < scores.Length && i < liveScoreTexts.Length; i++)
+        {
+            if (liveScoreTexts[i] == null) continue;
+            liveScoreTexts[i].text = $"{scores[i]}";
+            liveScoreTexts[i].color = GameManager.Instance.playerColors[i];
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the pieces-remaining counters for both players.
+    /// </summary>
     public void UpdatePiecesRemaining()
     {
         if (piecesRemainingTexts == null || piecesRemainingTexts.Length < 2) return;
 
         for (int i = 0; i < 2; i++)
         {
-            if (piecesRemainingTexts[i] != null)
-            {
-                int remainingPieces = PiecePalette.Instance.GetAvailablePiecesForPlayer(i).Count;
-                piecesRemainingTexts[i].text = $"{remainingPieces} Pieces";
-                piecesRemainingTexts[i].color = GameManager.Instance.playerColors[i];
-            }
+            if (piecesRemainingTexts[i] == null) continue;
+            int remaining = PiecePalette.Instance.GetAvailablePiecesForPlayer(i).Count;
+            piecesRemainingTexts[i].text = string.Format(L(LocalizationKeys.PiecesRemaining), remaining);
+            piecesRemainingTexts[i].color = GameManager.Instance.playerColors[i];
         }
     }
+
+    private void OnLanguageChanged()
+    {
+        UpdatePiecesRemaining();
+        UpdateScores(lastScores);
+    }
+
+    private string L(string key) =>
+        LocalizationManager.Instance != null ? LocalizationManager.Instance.GetText(key) : key;
 }

@@ -1,17 +1,22 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 
+/// <summary>
+/// Tracks and updates player scores throughout a match.
+/// Scores start at zero and increase by the number of squares in each placed piece.
+/// Bonus points are awarded for placing all pieces, with an extra bonus for placing I1 last.
+/// </summary>
 public class ScoreManager : MonoBehaviour
 {
     public static ScoreManager Instance;
 
-    private int[] playerScores = new int[2]; // Scores dos jogadores
+    private int[] playerScores = new int[2];
     private bool isInitialized = false;
 
     private const int ALL_PIECES_BONUS = 15;
     private const int I1_BONUS = 5;
 
-    void Awake()
+    private void Awake()
     {
         if (Instance == null)
         {
@@ -24,31 +29,53 @@ public class ScoreManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Resets both player scores to zero. Safe to call multiple times — use this on game restart.
+    /// </summary>
     public void InitializeScores()
     {
-        if (isInitialized) return;
-
-        int totalSquares = 0;
-        foreach (PieceManager.PieceType type in System.Enum.GetValues(typeof(PieceManager.PieceType)))
-        {
-            totalSquares += CountSquaresInPiece(type);
-        }
-
-        playerScores[0] = -totalSquares;
-        playerScores[1] = -totalSquares;
+        playerScores[0] = 0;
+        playerScores[1] = 0;
         isInitialized = true;
 
-        Debug.Log($"Scores iniciais calculados: J1={playerScores[0]}, J2={playerScores[1]}");
+        Debug.Log("Scores initialized: P1=0, P2=0");
     }
 
-    private int CalculateTotalSquaresForAllPieces()
+    /// <summary>
+    /// Adds the square count of the placed piece to the player's score and checks for bonuses.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based index of the player who placed the piece.</param>
+    /// <param name="pieceType">The type of piece that was placed.</param>
+    public void PiecePlaced(int playerIndex, PieceManager.PieceType pieceType)
     {
-        int total = 0;
-        foreach (PieceManager.PieceType type in System.Enum.GetValues(typeof(PieceManager.PieceType)))
+        if (!isInitialized) InitializeScores();
+
+        playerScores[playerIndex] += CountSquaresInPiece(pieceType);
+
+        if (AllPiecesPlaced(playerIndex))
         {
-            total += CountSquaresInPiece(type);
+            playerScores[playerIndex] += ALL_PIECES_BONUS;
+
+            if (pieceType == PieceManager.PieceType.I1)
+                playerScores[playerIndex] += I1_BONUS;
         }
-        return total;
+
+        UpdateAllScoresUI();
+    }
+
+    /// <summary>
+    /// Returns the current score for the given player.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player index.</param>
+    /// <returns>Current score, or 0 if the index is out of range.</returns>
+    public int GetPlayerScore(int playerIndex)
+    {
+        if (!isInitialized) InitializeScores();
+
+        if (playerIndex >= 0 && playerIndex < playerScores.Length)
+            return playerScores[playerIndex];
+
+        return 0;
     }
 
     private int CountSquaresInPiece(PieceManager.PieceType pieceType)
@@ -57,35 +84,10 @@ public class ScoreManager : MonoBehaviour
         int count = 0;
 
         for (int x = 0; x < shape.GetLength(0); x++)
-        {
             for (int y = 0; y < shape.GetLength(1); y++)
-            {
                 if (shape[x, y]) count++;
-            }
-        }
+
         return count;
-    }
-
-    public void PiecePlaced(int playerIndex, PieceManager.PieceType pieceType)
-    {
-        if (!isInitialized) InitializeScores();
-
-        // Atualiza a pontuação quando uma peça é colocada
-        int squaresInPiece = CountSquaresInPiece(pieceType);
-        playerScores[playerIndex] += squaresInPiece; // Remove os pontos negativos
-
-        // Verifica bônus
-        if (AllPiecesPlaced(playerIndex))
-        {
-            playerScores[playerIndex] += ALL_PIECES_BONUS; // Bônus por colocar todas as peças
-
-            if (pieceType == PieceManager.PieceType.I1)
-            {
-                playerScores[playerIndex] += I1_BONUS; // Bônus adicional
-            }
-        }
-
-        UpdateAllScoresUI();
     }
 
     private bool AllPiecesPlaced(int playerIndex)
@@ -97,19 +99,6 @@ public class ScoreManager : MonoBehaviour
     private void UpdateAllScoresUI()
     {
         if (ScoreUI.Instance != null)
-        {
             ScoreUI.Instance.UpdateScores(playerScores);
-        }
-    }
-
-    public int GetPlayerScore(int playerIndex)
-    {
-        if (!isInitialized)
-            InitializeScores();
-
-        if (playerIndex >= 0 && playerIndex < playerScores.Length)
-            return playerScores[playerIndex];
-
-        return 0;
     }
 }

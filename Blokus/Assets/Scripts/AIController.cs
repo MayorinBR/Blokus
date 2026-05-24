@@ -3,47 +3,58 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
+/// <summary>
+/// Controls the AI player's turn. Evaluates available pieces and board positions
+/// to find and execute a valid move, prioritising larger pieces and strategic corners.
+/// Notifies <see cref="TurnUI"/> while processing and skips the turn if no move is found.
+/// </summary>
 public class AIController : MonoBehaviour
 {
     public static AIController Instance;
+
+    [Tooltip("Set to false to disable the AI without removing the component.")]
     public bool isActive = true;
+
+    [Tooltip("Seconds the AI waits before making its move. Populated from GameSettings at startup.")]
     public float moveDelay;
 
-    void Awake()
+    private void Awake()
     {
         if (Instance == null)
-        {
             Instance = this;
-        }
         else
-        {
             Destroy(gameObject);
-        }
     }
 
     private void Start()
     {
         if (GameSettings.Instance != null)
-        {
             moveDelay = GameSettings.Instance.aiDelay;
-        }
     }
 
+    /// <summary>
+    /// Returns all piece types that the given player has not yet placed.
+    /// </summary>
+    /// <param name="playerIndex">Zero-based player index.</param>
+    /// <returns>List of available piece types.</returns>
     public List<PieceManager.PieceType> GetAvailablePieces(int playerIndex)
     {
-        List<PieceManager.PieceType> availablePieces = new List<PieceManager.PieceType>();
+        var available = new List<PieceManager.PieceType>();
 
         foreach (PieceManager.PieceType type in System.Enum.GetValues(typeof(PieceManager.PieceType)))
         {
             if (GameManager.Instance.CanUsePiece(type, playerIndex))
-            {
-                availablePieces.Add(type);
-            }
+                available.Add(type);
         }
 
-        return availablePieces;
+        return available;
     }
 
+    /// <summary>
+    /// Triggers the AI move coroutine for the given player.
+    /// Switches turns immediately if the game is in PvP mode or the AI is inactive.
+    /// </summary>
+    /// <param name="aiPlayerIndex">Zero-based index of the AI player.</param>
     public void MakeAIMove(int aiPlayerIndex)
     {
         if (GameSettings.Instance.isPvP || !isActive)
@@ -55,20 +66,33 @@ public class AIController : MonoBehaviour
         StartCoroutine(AIMoveRoutine(aiPlayerIndex));
     }
 
+    /// <summary>
+    /// Stops all running AI coroutines. Call this before resetting the game.
+    /// </summary>
+    public void ResetAI()
+    {
+        StopAllCoroutines();
+    }
+
     private IEnumerator AIMoveRoutine(int aiPlayerIndex)
     {
+        if (TurnUI.Instance != null)
+            TurnUI.Instance.ShowAIThinking(true);
+
         yield return new WaitForSeconds(moveDelay);
 
         List<PieceManager.PieceType> availablePieces = GetAvailablePieces(aiPlayerIndex);
 
         if (availablePieces.Count == 0)
         {
-            Debug.Log("AI não tem mais peças disponíveis. Passando a vez.");
+            Debug.Log("AI has no available pieces. Skipping turn.");
+            PlayerStatusUI.Instance?.ShowForPlayer(aiPlayerIndex, LocalizationKeys.StatusNoPieces);
+
+            if (TurnUI.Instance != null) TurnUI.Instance.ShowAIThinking(false);
             GameManager.Instance.SwitchPlayer();
             yield break;
         }
 
-        // Restante do método permanece igual...
         availablePieces = availablePieces
             .OrderByDescending(p => PieceManager.pieceShapes[p].GetLength(0) * PieceManager.pieceShapes[p].GetLength(1))
             .ToList();
@@ -94,6 +118,7 @@ public class AIController : MonoBehaviour
 
                         if (GameManager.Instance.PlacePiece(testPiece, testPosition))
                         {
+                            if (TurnUI.Instance != null) TurnUI.Instance.ShowAIThinking(false);
                             yield break;
                         }
                         else
@@ -107,16 +132,23 @@ public class AIController : MonoBehaviour
             Destroy(testPiece);
         }
 
-        Debug.Log("AI não encontrou movimentos válidos. Passando a vez.");
+        Debug.Log("AI found no valid moves. Skipping turn.");
+        PlayerStatusUI.Instance?.ShowForPlayer(aiPlayerIndex, LocalizationKeys.StatusNoMoves);
+
+        if (TurnUI.Instance != null) TurnUI.Instance.ShowAIThinking(false);
         GameManager.Instance.SwitchPlayer();
     }
 
+    /// <summary>
+    /// Generates a list of target coordinates based on local territorial proximity and game rules.
+    /// </summary>
+    /// <param name="aiPlayerIndex">Index of the AI player executing the turn.</param>
+    /// <returns>A distinct list of strategic board coordinates to evaluate.</returns>
     private List<Vector2Int> GetStrategicPositions(int aiPlayerIndex)
     {
-        List<Vector2Int> positions = new List<Vector2Int>();
+        var positions = new List<Vector2Int>();
         int boardSize = BoardManager.BoardSize;
 
-        // 1. Adiciona posições adjacentes às peças já colocadas
         for (int x = 0; x < boardSize; x++)
         {
             for (int y = 0; y < boardSize; y++)
@@ -140,14 +172,12 @@ public class AIController : MonoBehaviour
             }
         }
 
-        // 2. Se for o primeiro movimento, usa a posição inicial
         if (GameManager.Instance.IsFirstMove(aiPlayerIndex))
         {
             Vector2Int startPos = GameManager.Instance.startPositions[aiPlayerIndex];
             positions.Insert(0, startPos);
         }
 
-        // 3. Adiciona posições aleatórias se não houver estratégicas suficientes
         while (positions.Count < 20)
         {
             int x = Random.Range(0, boardSize);
@@ -158,8 +188,6 @@ public class AIController : MonoBehaviour
         return positions.Distinct().ToList();
     }
 
-    public void ResetAI()
-    {
-        StopAllCoroutines();
-    }
+    private string L(string key) =>
+        LocalizationManager.Instance != null ? LocalizationManager.Instance.GetText(key) : key;
 }

@@ -2,49 +2,68 @@
 using System.Collections;
 using UnityEngine;
 
+/// <summary>
+/// Core game controller. Manages board state, turn order, move validation,
+/// piece placement, and end-of-game detection for a two-player Blokus match.
+/// </summary>
+[DefaultExecutionOrder(-100)]
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance;
 
-    public int currentPlayer = 0; // 0-3 para os 4 jogadores
-    public int[,] occupiedSpaces = new int[BoardManager.BoardSize, BoardManager.BoardSize]; // -1 = vazio, 0-3 = jogadores
+    /// <summary>Zero-based index of the player whose turn it currently is.</summary>
+    public int currentPlayer = 0;
 
+    /// <summary>
+    /// 2D grid tracking which player occupies each board cell.
+    /// -1 = empty, 0 = Player 1, 1 = Player 2.
+    /// </summary>
+    public int[,] occupiedSpaces = new int[BoardManager.BoardSize, BoardManager.BoardSize];
+
+    /// <summary>Piece types each player has already placed, indexed by player.</summary>
     public List<PieceManager.PieceType>[] usedPieces;
 
-    public Color[] playerColors = new Color[4] {
-    new Color(1.0f, 0.0f, 0.0f),      // Vermelho mais escuro (Jogador 1)
-    new Color(0.0f, 0.0f, 1.0f),      // Azul mais escuro (Jogador 2)
-    new Color(0.0f, 1.0f, 0.0f),      // Verde mais escuro (Jogador 3)
-    new Color(1.0f, 1.0f, 0.0f)       // Amarelo mais escuro (Jogador 4)
-};
-
-    public Vector2Int[] startPositions = new Vector2Int[4]
+    /// <summary>Primary display colors for each player.</summary>
+    public Color[] playerColors = new Color[4]
     {
-    new Vector2Int(4, 4),   // Jogador 0 - Centro Superior Esquerdo
-    new Vector2Int(9, 9),   // Jogador 1 - Centro Inferior Direito
-    new Vector2Int(4, 9),   // Jogador 2 - Centro Superior Direito
-    new Vector2Int(9, 4)    // Jogador 3 - Centro Inferior Esquerdo
+        new Color(1.0f, 0.0f, 0.0f),
+        new Color(0.0f, 0.0f, 1.0f),
+        new Color(0.0f, 1.0f, 0.0f),
+        new Color(1.0f, 1.0f, 0.0f)
     };
 
-    void Awake()
+    /// <summary>Starting corner positions on the board for each player.</summary>
+    public Vector2Int[] startPositions = new Vector2Int[4]
+    {
+        new Vector2Int(4, 4),
+        new Vector2Int(9, 9),
+        new Vector2Int(4, 9),
+        new Vector2Int(9, 4)
+    };
+
+    /// <summary>Semi-transparent highlight colors used to mark starting positions on the board.</summary>
+    public Color[] playerHighlightColors = new Color[4]
+    {
+        new Color(1f, 0f, 0f, 0.7f),
+        new Color(0f, 0f, 1f, 0.7f),
+        new Color(0f, 1f, 0f, 0.7f),
+        new Color(1f, 1f, 0f, 0.7f)
+    };
+
+    private readonly List<GameObject> placedPieces = new List<GameObject>();
+
+    private void Awake()
     {
         usedPieces = new List<PieceManager.PieceType>[2];
         for (int i = 0; i < usedPieces.Length; i++)
-        {
             usedPieces[i] = new List<PieceManager.PieceType>();
-        }
 
         if (Instance == null)
         {
             Instance = this;
-            // Inicializa o tabuleiro como vazio (-1)
             for (int x = 0; x < BoardManager.BoardSize; x++)
-            {
                 for (int y = 0; y < BoardManager.BoardSize; y++)
-                {
                     occupiedSpaces[x, y] = -1;
-                }
-            }
         }
         else
         {
@@ -52,85 +71,107 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    void Start()
+    private void Start()
     {
+        SyncColorsFromSettings();
+
         if (ScoreManager.Instance != null)
-        {
             ScoreManager.Instance.InitializeScores();
-        }
 
         if (TurnUI.Instance != null)
-        {
             TurnUI.Instance.UpdateTurnUI(currentPlayer);
-        }
 
         if (ScoreUI.Instance != null)
-        {
             ScoreUI.Instance.UpdatePiecesRemaining();
-        }
 
         if (PiecePalette.Instance != null)
-        {
             PiecePalette.Instance.DisplayAllPieces();
-        }
 
-        Debug.Log($"[GameManager] Jogo iniciado - Jogador atual: {currentPlayer}");
+        Debug.Log($"[GameManager] Game started — current player: {currentPlayer}");
     }
 
+    /// <summary>
+    /// Returns whether the given player is still allowed to place the specified piece type.
+    /// </summary>
+    /// <param name="type">Piece type to check.</param>
+    /// <param name="playerIndex">Zero-based player index.</param>
+    /// <returns><c>true</c> if the piece has not yet been placed by that player.</returns>
     public bool CanUsePiece(PieceManager.PieceType type, int playerIndex)
     {
         return !usedPieces[playerIndex].Contains(type);
     }
 
+    /// <summary>
+    /// Records a piece as used for the given player. Has no effect if already recorded.
+    /// </summary>
+    /// <param name="type">Piece type that was placed.</param>
+    /// <param name="playerIndex">Zero-based player index.</param>
     public void MarkPieceAsUsed(PieceManager.PieceType type, int playerIndex)
     {
         if (!usedPieces[playerIndex].Contains(type))
         {
             usedPieces[playerIndex].Add(type);
-            Debug.Log($"Peça {type} marcada como usada pelo jogador {playerIndex}");
+            Debug.Log($"Piece {type} marked as used by player {playerIndex}.");
         }
     }
 
+    /// <summary>
+    /// Resets the full game state: destroys placed pieces, clears the board,
+    /// rebuilds the palette, resets scores, and returns to Player 1's turn.
+    /// </summary>
     public void ResetGame()
     {
+        foreach (GameObject piece in placedPieces)
+            if (piece != null) Destroy(piece);
+        placedPieces.Clear();
+
         for (int i = 0; i < usedPieces.Length; i++)
-        {
             usedPieces[i].Clear();
-        }
 
         for (int x = 0; x < BoardManager.BoardSize; x++)
-        {
             for (int y = 0; y < BoardManager.BoardSize; y++)
-            {
                 occupiedSpaces[x, y] = -1;
-            }
-        }
 
+        SyncColorsFromSettings();
         currentPlayer = 0;
-
-        if (TurnManager.Instance != null)
-        {
-            TurnManager.Instance.UpdateTurnUI();
-        }
 
         if (ScoreManager.Instance != null)
         {
             ScoreManager.Instance.InitializeScores();
+            ScoreUI.Instance.UpdateScores(new int[]
+            {
+                ScoreManager.Instance.GetPlayerScore(0),
+                ScoreManager.Instance.GetPlayerScore(1)
+            });
         }
 
-        ScoreUI.Instance.gameOverPanel.SetActive(false);
-        ScoreUI.Instance.postGameOverPanel.SetActive(false);
+        if (GameOverUI.Instance != null)
+        {
+            GameOverUI.Instance.gameObject.SetActive(false);
+            PlayerStatusUI.Instance?.ResetPanels();
+        }
+
+        BoardManager.Instance.ClearHighlights();
+        PiecePalette.Instance.ClearAll();
         PiecePalette.Instance.DisplayAllPieces();
         ScoreUI.Instance.UpdatePiecesRemaining();
+
+        if (TurnUI.Instance != null)
+            TurnUI.Instance.UpdateTurnUI(0);
     }
 
+    /// <summary>
+    /// Validates whether the given piece can legally be placed at its current position.
+    /// Checks board bounds, occupied cells, first-move starting position, and corner adjacency rules.
+    /// </summary>
+    /// <param name="piece">The piece GameObject to validate.</param>
+    /// <returns><c>true</c> if the placement is legal.</returns>
     public bool IsValidMove(GameObject piece)
     {
-        // VALIDAÇÃO CRÍTICA: Verifica se a peça pertence ao jogador atual
         int pieceOwner = GetPiecePlayer(piece);
         if (pieceOwner != currentPlayer)
         {
-            Debug.LogWarning($"Peça do jogador {pieceOwner} não pode ser movida no turno do jogador {currentPlayer}");
+            Debug.LogWarning($"Piece belongs to player {pieceOwner} but it is player {currentPlayer}'s turn.");
             return false;
         }
 
@@ -144,38 +185,27 @@ public class GameManager : MonoBehaviour
 
             if (boardPos.x < 0 || boardPos.x >= BoardManager.BoardSize ||
                 boardPos.y < 0 || boardPos.y >= BoardManager.BoardSize)
-            {
                 return false;
-            }
 
             if (occupiedSpaces[boardPos.x, boardPos.y] != -1)
-            {
                 return false;
-            }
         }
 
         if (IsFirstMove(currentPlayer))
         {
-            Vector2Int firstBlockPos = WorldToBoardPosition(blockWorldPositions[0]);
-            if (!IsInStartingCorner(firstBlockPos, currentPlayer))
+            bool anyBlockInStartPos = false;
+            foreach (Vector3 blockPos in blockWorldPositions)
             {
-                bool anyBlockInStartPos = false;
-                foreach (Vector3 blockPos in blockWorldPositions)
+                Vector2Int boardPos = WorldToBoardPosition(blockPos);
+                if (boardPos.x == startPositions[currentPlayer].x &&
+                    boardPos.y == startPositions[currentPlayer].y)
                 {
-                    Vector2Int boardPos = WorldToBoardPosition(blockPos);
-                    if (boardPos.x == startPositions[currentPlayer].x &&
-                        boardPos.y == startPositions[currentPlayer].y)
-                    {
-                        anyBlockInStartPos = true;
-                        break;
-                    }
-                }
-
-                if (!anyBlockInStartPos)
-                {
-                    return false;
+                    anyBlockInStartPos = true;
+                    break;
                 }
             }
+
+            if (!anyBlockInStartPos) return false;
         }
         else
         {
@@ -185,15 +215,18 @@ public class GameManager : MonoBehaviour
                 CheckAdjacentSpaces(boardPos, ref hasAdjacentCorner, ref hasAdjacentSide);
             }
 
-            if (!hasAdjacentCorner || hasAdjacentSide)
-            {
-                return false;
-            }
+            if (!hasAdjacentCorner || hasAdjacentSide) return false;
         }
 
         return true;
     }
 
+    /// <summary>
+    /// Checks whether the given player has at least one legal move available.
+    /// Temporarily overrides <see cref="currentPlayer"/> for validation purposes.
+    /// </summary>
+    /// <param name="player">Zero-based player index to check.</param>
+    /// <returns><c>true</c> if a valid move exists.</returns>
     public bool HasValidMoves(int player)
     {
         int originalPlayer = currentPlayer;
@@ -232,11 +265,20 @@ public class GameManager : MonoBehaviour
         return false;
     }
 
+    /// <summary>
+    /// Returns whether the given player has not yet placed any pieces.
+    /// </summary>
+    /// <param name="player">Zero-based player index.</param>
+    /// <returns><c>true</c> if this is the player's first turn.</returns>
     public bool IsFirstMove(int player)
     {
         return usedPieces[player].Count == 0;
     }
 
+    /// <summary>
+    /// Advances the game to the next player's turn. Skips players with no valid moves
+    /// and shows a localized notification. Ends the game if neither player can move.
+    /// </summary>
     public void SwitchPlayer()
     {
         int previousPlayer = currentPlayer;
@@ -257,7 +299,8 @@ public class GameManager : MonoBehaviour
 
             if (!HasValidMoves(currentPlayer))
             {
-                Debug.Log($"Jogador {currentPlayer} não tem movimentos válidos");
+                Debug.Log($"Player {currentPlayer + 1} has no valid moves. Skipping turn.");
+                PlayerStatusUI.Instance?.ShowForPlayer(currentPlayer, LocalizationKeys.StatusNoMoves);
                 currentPlayer = (currentPlayer + 1) % 2;
 
                 if (!HasValidMoves(currentPlayer))
@@ -268,76 +311,51 @@ public class GameManager : MonoBehaviour
             }
 
             if (currentPlayer == 1 && !isPvP)
-            {
                 StartCoroutine(AITurnDelay());
-            }
         }
 
-        Debug.Log($"[SwitchPlayer] Mudou de jogador {previousPlayer} para jogador {currentPlayer}");
-
-        if (TurnManager.Instance != null)
-        {
-            TurnManager.Instance.UpdateTurnUI();
-            Debug.Log($"[SwitchPlayer] TurnManager.UpdateTurnUI() chamado");
-        }
-        else
-        {
-            Debug.LogWarning("[SwitchPlayer] TurnManager.Instance é null!");
-        }
+        Debug.Log($"[SwitchPlayer] Switched from player {previousPlayer} to player {currentPlayer}.");
 
         if (TurnUI.Instance != null)
-        {
             TurnUI.Instance.UpdateTurnUI(currentPlayer);
-            Debug.Log($"[SwitchPlayer] TurnUI.UpdateTurnUI({currentPlayer}) chamado diretamente");
-        }
         else
-        {
-            Debug.LogWarning("[SwitchPlayer] TurnUI.Instance é null!");
-        }
+            Debug.LogWarning("[SwitchPlayer] TurnUI.Instance is null.");
     }
 
+    /// <summary>
+    /// Returns whether the game is over, i.e. neither player has any valid moves remaining.
+    /// </summary>
+    /// <returns><c>true</c> if no moves are available for either player.</returns>
     public bool IsGameOver()
     {
         return !HasValidMoves(0) && !HasValidMoves(1);
     }
 
+    /// <summary>
+    /// Ends the game, calculates final scores, and activates the game-over overlay.
+    /// </summary>
     public void EndGame()
     {
-        Debug.Log("Jogo encerrado!");
+        Debug.Log("Game over!");
 
         int[] scores = new int[2];
         scores[0] = ScoreManager.Instance.GetPlayerScore(0);
         scores[1] = ScoreManager.Instance.GetPlayerScore(1);
 
-        if (scores[0] > scores[1])
-        {
-            Debug.Log("Jogador 1 venceu!");
-        }
-        else if (scores[1] > scores[0])
-        {
-            Debug.Log("Jogador 2 venceu!");
-        }
-        else
-        {
-            Debug.Log("Empate!");
-        }
+        if (scores[0] > scores[1]) Debug.Log("Player 1 wins!");
+        else if (scores[1] > scores[0]) Debug.Log("Player 2 wins!");
+        else Debug.Log("It's a tie!");
 
-        ScoreUI.Instance.gameOverPanel.SetActive(true);
-        Invoke("ShowPostGameOverScreen", 3f);
+        GameOverUI.Instance.Show(scores);
     }
 
-    private void ShowPostGameOverScreen()
-    {
-        ScoreUI.Instance.gameOverPanel.SetActive(false);
-        ScoreUI.Instance.postGameOverPanel.SetActive(true);
-    }
-
-    private bool IsInStartingCorner(Vector2Int boardPos, int player)
-    {
-        Vector2Int startPos = startPositions[player];
-        return (boardPos.x == startPos.x && boardPos.y == startPos.y);
-    }
-
+    /// <summary>
+    /// Inspects the neighbours of the given board cell and sets the out-parameters to indicate
+    /// whether the current player's pieces are adjacent by side or by corner.
+    /// </summary>
+    /// <param name="boardPos">Cell to inspect.</param>
+    /// <param name="hasAdjacentCorner">Set to <c>true</c> if a diagonal neighbour belongs to the current player.</param>
+    /// <param name="hasAdjacentSide">Set to <c>true</c> if an orthogonal neighbour belongs to the current player.</param>
     public void CheckAdjacentSpaces(Vector2Int boardPos, ref bool hasAdjacentCorner, ref bool hasAdjacentSide)
     {
         for (int x = -1; x <= 1; x++)
@@ -352,23 +370,23 @@ public class GameManager : MonoBehaviour
                 if (checkX >= 0 && checkX < BoardManager.BoardSize &&
                     checkY >= 0 && checkY < BoardManager.BoardSize)
                 {
-                    // REGRA DO BLOKUS: Só considera adjacência de peças DA MESMA COR
                     if (occupiedSpaces[checkX, checkY] == currentPlayer)
                     {
                         if (Mathf.Abs(x) + Mathf.Abs(y) == 1)
-                        {
                             hasAdjacentSide = true;
-                        }
                         else if (Mathf.Abs(x) == 1 && Mathf.Abs(y) == 1)
-                        {
                             hasAdjacentCorner = true;
-                        }
                     }
                 }
             }
         }
     }
 
+    /// <summary>
+    /// Converts a world-space position to a board grid coordinate.
+    /// </summary>
+    /// <param name="worldPosition">World-space position to convert.</param>
+    /// <returns>Board cell coordinate, which may be out of bounds if the position is off the board.</returns>
     public Vector2Int WorldToBoardPosition(Vector3 worldPosition)
     {
         float tileSize = BoardManager.Instance.tileSize;
@@ -380,6 +398,13 @@ public class GameManager : MonoBehaviour
         return new Vector2Int(x, y);
     }
 
+    /// <summary>
+    /// Attempts to place the given piece at the specified position. Validates ownership,
+    /// availability, and move legality, then snaps the piece to the nearest board cell.
+    /// </summary>
+    /// <param name="piece">The piece GameObject to place.</param>
+    /// <param name="position">Target world-space position.</param>
+    /// <returns><c>true</c> if the piece was successfully placed.</returns>
     public bool PlacePiece(GameObject piece, Vector3 position)
     {
         PieceManager.PieceType type = GetPieceType(piece);
@@ -387,19 +412,19 @@ public class GameManager : MonoBehaviour
         int pieceOwner = GetPiecePlayer(piece);
         if (pieceOwner != currentPlayer)
         {
-            Debug.LogWarning($"Não pode colocar peça do jogador {pieceOwner} no turno do jogador {currentPlayer}");
+            Debug.LogWarning($"Cannot place piece belonging to player {pieceOwner} on player {currentPlayer}'s turn.");
             return false;
         }
 
         if (!CanUsePiece(type, currentPlayer))
         {
-            Debug.LogWarning("Esta peça já foi usada!");
+            Debug.LogWarning("This piece has already been used.");
             return false;
         }
 
         if (!HasValidMoves(currentPlayer))
         {
-            Debug.Log("Jogador não tem movimentos válidos - pulando turno");
+            Debug.Log("Player has no valid moves — skipping turn.");
             SwitchPlayer();
             return false;
         }
@@ -407,9 +432,7 @@ public class GameManager : MonoBehaviour
         if (!IsValidMove(piece))
         {
             if (PiecePalette.Instance != null)
-            {
                 PiecePalette.Instance.ResetPieceRotation(piece);
-            }
             return false;
         }
 
@@ -428,38 +451,28 @@ public class GameManager : MonoBehaviour
         piece.transform.position = snappedPosition - offset;
 
         ConfigurePlacedPiece(piece);
+        placedPieces.Add(piece);
         MarkPieceAsUsed(type, currentPlayer);
         PiecePalette.Instance.RemovePiece(type, currentPlayer);
 
-        if (PiecePalette.Instance != null)
-        {
-            PiecePalette.Instance.RemovePiece(GetPieceType(piece), currentPlayer);
-        }
-
         ScoreManager.Instance.PiecePlaced(currentPlayer, GetPieceType(piece));
 
-        Debug.Log($"[PlacePiece] Peça colocada pelo jogador {currentPlayer}. Chamando SwitchPlayer()...");
+        Debug.Log($"[PlacePiece] Piece placed by player {currentPlayer}. Switching player...");
         SwitchPlayer();
 
         ScoreUI.Instance.UpdatePiecesRemaining();
-
         return true;
     }
+
+    // ── Private Helpers ───────────────────────────────────────────────────────
 
     private void ConfigurePlacedPiece(GameObject piece)
     {
         PieceDragger dragger = piece.GetComponent<PieceDragger>();
-        if (dragger != null)
-        {
-            dragger.CleanUp();
-            Destroy(dragger);
-        }
+        if (dragger != null) { dragger.CleanUp(); Destroy(dragger); }
 
         PieceFlipper flipper = piece.GetComponent<PieceFlipper>();
-        if (flipper != null)
-        {
-            Destroy(flipper);
-        }
+        if (flipper != null) Destroy(flipper);
 
         piece.SetActive(true);
         Vector3 pos = piece.transform.position;
@@ -470,9 +483,7 @@ public class GameManager : MonoBehaviour
         {
             piece.layer = placedPieceLayer;
             foreach (Transform child in piece.transform)
-            {
                 child.gameObject.layer = placedPieceLayer;
-            }
         }
     }
 
@@ -482,21 +493,16 @@ public class GameManager : MonoBehaviour
         return (PieceManager.PieceType)System.Enum.Parse(typeof(PieceManager.PieceType), pieceName);
     }
 
-    // FUNÇÃO CRÍTICA: Extrai o índice do jogador do nome da peça
     private int GetPiecePlayer(GameObject piece)
     {
-        // Nome da peça é "I5_Player0" ou "T4_Player1"
         string[] parts = piece.name.Split('_');
         if (parts.Length >= 2 && parts[1].StartsWith("Player"))
         {
             string playerStr = parts[1].Replace("Player", "");
             if (int.TryParse(playerStr, out int playerIndex))
-            {
                 return playerIndex;
-            }
         }
 
-        // Fallback: determina pela cor
         Renderer renderer = piece.GetComponentInChildren<Renderer>();
         if (renderer != null)
         {
@@ -504,13 +510,11 @@ public class GameManager : MonoBehaviour
             for (int i = 0; i < playerColors.Length; i++)
             {
                 if (ColorsAreSimilar(pieceColor, playerColors[i]))
-                {
                     return i;
-                }
             }
         }
 
-        Debug.LogError($"Impossível determinar jogador da peça: {piece.name}");
+        Debug.LogError($"Cannot determine player for piece: {piece.name}");
         return -1;
     }
 
@@ -519,6 +523,21 @@ public class GameManager : MonoBehaviour
         return Mathf.Abs(a.r - b.r) < threshold &&
                Mathf.Abs(a.g - b.g) < threshold &&
                Mathf.Abs(a.b - b.b) < threshold;
+    }
+
+    private void SyncColorsFromSettings()
+    {
+        if (GameSettings.Instance == null) return;
+
+        for (int i = 0; i < 2; i++)
+        {
+            Color c = GameSettings.Instance.GetPlayerColor(i);
+            playerColors[i] = c;
+            playerHighlightColors[i] = new Color(c.r, c.g, c.b, 0.7f);
+        }
+
+        if (BoardManager.Instance != null)
+            BoardManager.Instance.HighlightStartingPositions();
     }
 
     private Vector3 FindBestSnapReference(List<Vector3> blockPositions)
@@ -547,11 +566,6 @@ public class GameManager : MonoBehaviour
         AIController.Instance.MakeAIMove(currentPlayer);
     }
 
-    public Color[] playerHighlightColors = new Color[4]
-    {
-        new Color(1f, 0f, 0f, 0.7f),
-        new Color(0f, 0f, 1f, 0.7f),
-        new Color(0f, 1f, 0f, 0.7f),
-        new Color(1f, 1f, 0f, 0.7f)
-    };
+    private string L(string key) =>
+        LocalizationManager.Instance != null ? LocalizationManager.Instance.GetText(key) : key;
 }
