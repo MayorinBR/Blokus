@@ -1,30 +1,31 @@
 ﻿using UnityEngine;
-using System.Collections;
 
+/// <summary>
+/// Handles mouse-driven drag-and-drop interaction for a single piece.
+/// Attached to each piece GameObject by <see cref="PieceManager"/>.
+/// Supports rotation (A / D / RMB) and flipping (W / S) while dragging,
+/// and validates placement on mouse release via <see cref="GameManager"/>.
+/// </summary>
 public class PieceDragger : MonoBehaviour
 {
     private GameObject selectedPiece;
     private Vector3 offset;
     private float zCoord;
     private Vector3 originalPosition;
-    private Quaternion originalRotation;
     private bool wasDragging = false;
     private bool isBeingDestroyed = false;
 
-    void Update()
+    private void Update()
     {
+        if (Time.timeScale == 0f) return;
+
         if (Input.GetMouseButtonDown(0))
-        {
             TrySelectPiece();
-        }
 
         if (selectedPiece != null)
         {
-            // Only allow transformations if the piece is being dragged
             if (wasDragging && selectedPiece.GetComponent<PieceDragger>() != null)
-            {
                 HandlePieceTransformations();
-            }
 
             if (Input.GetMouseButton(0))
             {
@@ -33,16 +34,12 @@ public class PieceDragger : MonoBehaviour
                 wasDragging = true;
 
                 if (BoardManager.Instance.enableHighlight)
-                {
                     BoardManager.Instance.HighlightValidPositions(selectedPiece);
-                }
             }
             else if (Input.GetMouseButtonUp(0))
             {
                 if (wasDragging)
-                {
                     HandlePiecePlacement();
-                }
             }
         }
     }
@@ -51,27 +48,27 @@ public class PieceDragger : MonoBehaviour
     {
         PieceFlipper flipper = selectedPiece.GetComponent<PieceFlipper>();
 
-        if (Input.GetKeyDown(KeyCode.A)) // Rotação para esquerda
+        if (Input.GetKeyDown(KeyCode.A))
         {
             selectedPiece.transform.Rotate(0, -90, 0);
             UpdateVisuals();
         }
-        else if (Input.GetKeyDown(KeyCode.D)) // Rotação para direita
+        else if (Input.GetKeyDown(KeyCode.D))
         {
             selectedPiece.transform.Rotate(0, 90, 0);
             UpdateVisuals();
         }
-        else if (Input.GetKeyDown(KeyCode.W)) // Flip vertical
+        else if (Input.GetKeyDown(KeyCode.W))
         {
             flipper.FlipZ();
             UpdateVisuals();
         }
-        else if (Input.GetKeyDown(KeyCode.S)) // Flip horizontal
+        else if (Input.GetKeyDown(KeyCode.S))
         {
             flipper.FlipX();
             UpdateVisuals();
         }
-        else if (Input.GetMouseButtonDown(1)) // Rotação com botão direito
+        else if (Input.GetMouseButtonDown(1))
         {
             selectedPiece.transform.Rotate(0, 90, 0);
             UpdateVisuals();
@@ -80,79 +77,45 @@ public class PieceDragger : MonoBehaviour
 
     private void UpdateVisuals()
     {
-        // Force position update after transformation
         Vector3 newPos = GetMouseWorldPos() + offset;
         selectedPiece.transform.position = new Vector3(newPos.x, 0, newPos.z);
 
         if (BoardManager.Instance.enableHighlight)
-        {
             BoardManager.Instance.HighlightValidPositions(selectedPiece);
-        }
     }
 
     private void TrySelectPiece()
     {
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit))
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+
+        Transform rootPiece = hit.transform.root;
+        PieceDragger dragger = rootPiece.GetComponent<PieceDragger>();
+        if (dragger == null || dragger != this) return;
+
+        string pieceName = rootPiece.name.Split('_')[0];
+        PieceManager.PieceType type = (PieceManager.PieceType)System.Enum.Parse(
+            typeof(PieceManager.PieceType), pieceName);
+
+        bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
+
+        if (!isPvP && rootPiece.name.Contains("_Player1"))
         {
-            Transform rootPiece = hit.transform.root;
-            PieceDragger dragger = rootPiece.GetComponent<PieceDragger>();
-
-            if (dragger != null && dragger == this)
-            {
-                // Verifica se a peça está na paleta do jogador atual
-                string pieceName = rootPiece.name.Split('_')[0];
-                PieceManager.PieceType type = (PieceManager.PieceType)System.Enum.Parse(
-                    typeof(PieceManager.PieceType), pieceName);
-
-                // NOVA VALIDAÇÃO: Bloqueia arraste de peças do Player 2 no modo 1 jogador
-                bool isPvP = GameSettings.Instance != null && GameSettings.Instance.isPvP;
-
-                // Se não é PvP (modo 1 jogador) e é uma peça do Player 2, não permite arrastar
-                if (!isPvP && rootPiece.name.Contains("_Player1"))
-                {
-                    Debug.Log("Não é possível arrastar peças da IA no modo 1 jogador!");
-                    return;
-                }
-
-                if ((GameManager.Instance.currentPlayer == 0 && PiecePalette.Instance.player1Pieces.ContainsKey(type)) ||
-                    (GameManager.Instance.currentPlayer == 1 && PiecePalette.Instance.player2Pieces.ContainsKey(type)))
-                {
-                    selectedPiece = rootPiece.gameObject;
-                    zCoord = Camera.main.WorldToScreenPoint(selectedPiece.transform.position).z;
-                    offset = selectedPiece.transform.position - GetMouseWorldPos();
-                    originalPosition = selectedPiece.transform.position;
-                    wasDragging = false;
-
-                    PiecePalette.Instance.PieceSelected(selectedPiece);
-                }
-            }
+            Debug.Log("Cannot drag AI pieces in single-player mode.");
+            return;
         }
-    }
 
-    private int GetPiecePlayer(GameObject piece)
-    {
-        // Verifica a cor da peça para determinar o jogador
-        Renderer renderer = piece.GetComponentInChildren<Renderer>();
-        if (renderer != null)
+        if ((GameManager.Instance.currentPlayer == 0 && PiecePalette.Instance.player1Pieces.ContainsKey(type)) ||
+            (GameManager.Instance.currentPlayer == 1 && PiecePalette.Instance.player2Pieces.ContainsKey(type)))
         {
-            Color pieceColor = renderer.material.color;
-            for (int i = 0; i < GameManager.Instance.playerColors.Length; i++)
-            {
-                if (ColorsAreSimilar(pieceColor, GameManager.Instance.playerColors[i]))
-                {
-                    return i;
-                }
-            }
-        }
-        return -1;
-    }
+            selectedPiece = rootPiece.gameObject;
+            zCoord = Camera.main.WorldToScreenPoint(selectedPiece.transform.position).z;
+            offset = selectedPiece.transform.position - GetMouseWorldPos();
+            originalPosition = selectedPiece.transform.position;
+            wasDragging = false;
 
-    private bool ColorsAreSimilar(Color a, Color b, float threshold = 0.1f)
-    {
-        return Mathf.Abs(a.r - b.r) < threshold &&
-               Mathf.Abs(a.g - b.g) < threshold &&
-               Mathf.Abs(a.b - b.b) < threshold;
+            PiecePalette.Instance.PieceSelected(selectedPiece);
+        }
     }
 
     private void HandlePiecePlacement()
@@ -163,16 +126,17 @@ public class PieceDragger : MonoBehaviour
 
         if (isValid && GameManager.Instance.PlacePiece(selectedPiece, selectedPiece.transform.position))
         {
-            // Limpa a referência sem destruir a peça
             CleanUp();
             return;
         }
-        else
-        {
-            ReturnPieceToOriginalPosition();
-        }
+
+        ReturnPieceToOriginalPosition();
     }
 
+    /// <summary>
+    /// Clears the drag selection and resets the board highlights.
+    /// Call this after successful placement to release the piece reference.
+    /// </summary>
     public void CleanUp()
     {
         if (isBeingDestroyed) return;
@@ -196,22 +160,17 @@ public class PieceDragger : MonoBehaviour
     {
         if (selectedPiece != null)
         {
-            // Retorna para a posição original
             selectedPiece.transform.position = originalPosition;
 
-            // Reseta para rotação padrão de 90 graus
             PieceFlipper flipper = selectedPiece.GetComponent<PieceFlipper>();
             if (flipper != null)
-            {
                 flipper.ResetToDefaultRotation();
-            }
             else
-            {
                 selectedPiece.transform.rotation = Quaternion.Euler(0, 90, 0);
-            }
 
             selectedPiece.transform.localScale = Vector3.one * PiecePalette.Instance.pieceScale;
         }
+
         CleanUp();
     }
 }
